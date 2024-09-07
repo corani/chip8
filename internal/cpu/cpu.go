@@ -1,6 +1,7 @@
 package cpu
 
 import (
+	"math/rand"
 	"time"
 
 	"github.com/corani/chip-8/internal/display"
@@ -47,9 +48,7 @@ func (cpu *CPU) Tick(dt time.Duration) {
 	op := cpu.memory.ReadWord(cpu.pc)
 	cpu.pc += 2
 
-	// decode opcode
-	_ = op
-
+	// decode and execute opcode
 	if op == 0x00E0 {
 		// 00E0: CLS
 		cpu.display.Clear()
@@ -72,11 +71,13 @@ func (cpu *CPU) Tick(dt time.Duration) {
 		}
 	} else if op&0xF000 == 0x4000 {
 		// 4xkk: SNE Vx, byte
+		// If values differ, skip the next opcode
 		if cpu.reg[(op&0x0F00)>>8] != uint8(op&0x00FF) {
 			cpu.pc += 2
 		}
 	} else if op&0xF00F == 0x5000 {
 		// 5xy0: SE Vx, Vy
+		// If values are the same, skip the next opcode
 		if cpu.reg[(op&0x0F00)>>8] == cpu.reg[(op&0x00F0)>>4] {
 			cpu.pc += 2
 		}
@@ -101,6 +102,7 @@ func (cpu *CPU) Tick(dt time.Duration) {
 	} else if op&0xF00F == 0x8004 {
 		// 8xy4: ADD Vx, Vy
 		cpu.reg[(op&0x0F00)>>8] += cpu.reg[(op&0x00F0)>>4]
+
 		// set carry flag
 		if cpu.reg[(op&0x0F00)>>8] < cpu.reg[(op&0x00F0)>>4] {
 			cpu.reg[0xF] = 1
@@ -115,15 +117,19 @@ func (cpu *CPU) Tick(dt time.Duration) {
 		} else {
 			cpu.reg[0xF] = 0
 		}
+
 		// subtract
 		cpu.reg[(op&0x0F00)>>8] -= cpu.reg[(op&0x00F0)>>4]
 	} else if op&0xF00F == 0x8006 {
 		// 8xy6: SHR Vx {, Vy}
+		// set carry flag
 		if cpu.reg[(op&0x0F00)>>8]&0x1 == 1 {
 			cpu.reg[0xF] = 1
 		} else {
 			cpu.reg[0xF] = 0
 		}
+
+		// shift right
 		cpu.reg[(op&0x0F00)>>8] >>= 1
 	} else if op&0xF00F == 0x8007 {
 		// 8xy7: SUBN Vx, Vy
@@ -133,6 +139,8 @@ func (cpu *CPU) Tick(dt time.Duration) {
 		} else {
 			cpu.reg[0xF] = 0
 		}
+
+		// subtract
 		cpu.reg[(op&0x0F00)>>8] = cpu.reg[(op&0x00F0)>>4] - cpu.reg[(op&0x0F00)>>8]
 	} else if op&0xF00F == 0x800E {
 		// 8xyE: SHL Vx {, Vy}
@@ -142,6 +150,8 @@ func (cpu *CPU) Tick(dt time.Duration) {
 		} else {
 			cpu.reg[0xF] = 0
 		}
+
+		// shift left
 		cpu.reg[(op&0x0F00)>>8] <<= 1
 	} else if op&0xF00F == 0x9000 {
 		// 9xy0: SNE Vx, Vy
@@ -156,10 +166,22 @@ func (cpu *CPU) Tick(dt time.Duration) {
 		cpu.pc = uint16(cpu.reg[0]) + uint16(op&0x0FFF)
 	} else if op&0xF000 == 0xC000 {
 		// Cxkk: RND Vx, byte
-		// The interpreter generates a random number from 0 to 255, which is then ANDed with the value kk. The results are stored in Vx.
+		// The interpreter generates a random number from 0 to 255, which is then
+		// ANDed with the value kk. The results are stored in Vx.
+		rnd := uint16(rand.Intn(255))
+		cpu.reg[(op&0x0F00)>>8] = uint8(rnd & op & 0x00FF)
 	} else if op&0xF000 == 0xD000 {
 		// Dxyn: DRW Vx, Vy, nibble
-		// Display n-byte sprite starting at memory location I at (Vx, Vy), set VF = collision.
+		// Display n-byte sprite starting at memory location I at (Vx, Vy),
+		// set VF = collision.
+		x := (op & 0x0F00) >> 8
+		y := (op & 0x00F0) >> 4
+		n := op & 0x000F
+		if cpu.display.Blit(x, y, cpu.memory.ReadRange(cpu.i, n)) {
+			cpu.reg[0xF] = 1
+		} else {
+			cpu.reg[0xF] = 0
+		}
 	} else if op&0xF0FF == 0xE09E {
 		// Ex9E: SKP Vx
 		if cpu.keyboard.IsKeyPressed(cpu.reg[(op&0x0F00)>>8]) {
@@ -175,8 +197,14 @@ func (cpu *CPU) Tick(dt time.Duration) {
 		cpu.reg[(op&0x0F00)>>8] = cpu.delay.Get()
 	} else if op&0xF0FF == 0xF00A {
 		// Fx0A: LD Vx, K
-		// Wait for a key press, store the value of the key in Vx.
-		cpu.reg[(op&0x0F00)>>8] = cpu.keyboard.WaitForKey()
+		code, ok := cpu.keyboard.GetKeyPress()
+		if ok {
+			cpu.reg[(op&0x0F00)>>8] = code
+		} else {
+			// no key was pressed, reset the program counter so we
+			// try again on the next tick.
+			cpu.pc -= 2
+		}
 	} else if op&0xF0FF == 0xF015 {
 		// Fx15: LD DT, Vx
 		cpu.delay.Set(cpu.reg[(op&0x0F00)>>8])
@@ -189,6 +217,8 @@ func (cpu *CPU) Tick(dt time.Duration) {
 	} else if op&0xF0FF == 0xF029 {
 		// Fx29: LD F, Vx
 		// Set I = location of sprite for digit Vx.
+		// (digit sprites are 5 bytes)
+		cpu.i = uint16(cpu.reg[(op&0x0F00)>>8] * 5)
 	} else if op&0xF0FF == 0xF033 {
 		// Fx33: LD B, Vx
 		val := cpu.reg[(op&0x0F00)>>8]
@@ -210,6 +240,4 @@ func (cpu *CPU) Tick(dt time.Duration) {
 			cpu.reg[i] = cpu.memory.ReadByte(cpu.i + i)
 		}
 	}
-
-	// execute opcode
 }

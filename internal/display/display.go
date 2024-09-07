@@ -26,3 +26,20 @@ func (d *Display) Clear() {
 		}
 	}
 }
+
+func (d *Display) Blit(sx, sy uint16, sprite []uint8) bool {
+	// all sprites are 8 pixels (bits) wide
+	const width = uint16(8)
+	height := uint16(len(sprite))
+
+	for y := uint16(0); y < height; y++ {
+		for x := uint16(0); x < width; x++ {
+			// get the correct bit
+			val := (sprite[y*height] >> (width - x - 1)) & 0x01
+			// sprites need to wrap!
+			d.Framebuffer[(sx+x)%width][(sy+y)%height] = val
+		}
+	}
+
+	return false
+}

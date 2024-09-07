@@ -45,14 +45,10 @@ func (k *Keyboard) IsKeyPressed(code uint8) bool {
 	return *k.pressed == code
 }
 
-func (k *Keyboard) WaitForKey() uint8 {
-	for k.pressed == nil {
-		k.Yield()
+func (k *Keyboard) GetKeyPress() (uint8, bool) {
+	if k.pressed == nil {
+		return 0, false
 	}
 
-	return *k.pressed
-}
-
-func (k *Keyboard) Yield() {
-	time.Sleep(10 * time.Millisecond)
+	return *k.pressed, true
 }

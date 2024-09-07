@@ -19,3 +19,7 @@ func (mem *Memory) WriteByte(addr uint16, value uint8) {
 func (mem *Memory) ReadWord(addr uint16) uint16 {
 	return uint16(mem.RAM[addr])<<8 | uint16(mem.RAM[addr+1])
 }
+
+func (mem *Memory) ReadRange(start, length uint16) []byte {
+	return mem.RAM[start : start+length]
+}

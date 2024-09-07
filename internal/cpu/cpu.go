@@ -1,17 +1,23 @@
 package cpu
 
 import (
+	"fmt"
 	"math/rand"
 	"time"
 
+	"github.com/charmbracelet/log"
 	"github.com/corani/chip-8/internal/display"
 	"github.com/corani/chip-8/internal/keyboard"
 	"github.com/corani/chip-8/internal/memory"
 	"github.com/corani/chip-8/internal/timer"
 )
 
-func New(m *memory.Memory, d *display.Display, k *keyboard.Keyboard, dt, st *timer.Timer) *CPU {
+func New(
+	l *log.Logger, m *memory.Memory, d *display.Display, k *keyboard.Keyboard,
+	dt, st *timer.Timer,
+) *CPU {
 	return &CPU{
+		logger:   l,
 		memory:   m,
 		display:  d,
 		keyboard: k,
@@ -22,12 +28,13 @@ func New(m *memory.Memory, d *display.Display, k *keyboard.Keyboard, dt, st *tim
 		reg:      [16]uint8{},
 		stack:    [16]uint16{},
 		i:        0,
-		pc:       0,
+		pc:       0x200,
 		sp:       0,
 	}
 }
 
 type CPU struct {
+	logger   *log.Logger
 	memory   *memory.Memory
 	display  *display.Display
 	keyboard *keyboard.Keyboard
@@ -44,200 +51,316 @@ type CPU struct {
 }
 
 func (cpu *CPU) Tick(dt time.Duration) {
+	cpu.dt += dt
+
+	for cpu.dt >= time.Second/time.Duration(cpu.fps) {
+		cpu.dt -= time.Second / time.Duration(cpu.fps)
+		cpu.tick()
+	}
+}
+
+func (cpu *CPU) tick() {
 	// fetch opcode
 	op := cpu.memory.ReadWord(cpu.pc)
 	cpu.pc += 2
 
+	dis := fmt.Sprintf("%04x\t%04x\t", cpu.pc-2, op)
+
 	// decode and execute opcode
-	if op == 0x00E0 {
-		// 00E0: CLS
-		cpu.display.Clear()
-	} else if op == 0x00EE {
-		// 00EE: RET
-		cpu.pc = cpu.stack[cpu.sp]
-		cpu.sp--
-	} else if op&0xF000 == 0x1000 {
+	addr := op & 0x0FFF
+	m := op >> 12
+	x := (op & 0x0F00) >> 8
+	y := (op & 0x00F0) >> 4
+	n := op & 0x000F
+	kk := op & 0x00FF
+
+	switch m {
+	case 0x0:
+		switch addr {
+		case 0x0E0:
+			// 00E0: CLS
+			dis += "CLS"
+			cpu.display.Clear()
+		case 0x0EE:
+			// 00EE: RET
+			dis += "RET"
+			cpu.pc = cpu.stack[cpu.sp]
+			cpu.sp--
+		}
+	case 0x1:
 		// 1nnn: JP addr
-		cpu.pc = op & 0x0FFF
-	} else if op&0xF000 == 0x2000 {
+		dis += fmt.Sprintf("JP   %04x", addr)
+
+		// Jump to self is a halt
+		if addr == cpu.pc-2 {
+			dis += " (HALT)"
+		}
+
+		cpu.pc = addr
+	case 0x2:
 		// 2nnn: CALL addr
+		dis += fmt.Sprintf("CALL %04x", addr)
+
 		cpu.sp++
 		cpu.stack[cpu.sp] = cpu.pc
-		cpu.pc = op & 0x0FFF
-	} else if op&0xF000 == 0x3000 {
+		cpu.pc = addr
+	case 0x3:
 		// 3xkk: SE Vx, byte
-		if cpu.reg[(op&0x0F00)>>8] == uint8(op&0x00FF) {
+		dis += fmt.Sprintf("SE   V%x, %02x", x, kk)
+
+		if cpu.reg[x] == uint8(kk) {
 			cpu.pc += 2
 		}
-	} else if op&0xF000 == 0x4000 {
+	case 0x4:
 		// 4xkk: SNE Vx, byte
 		// If values differ, skip the next opcode
-		if cpu.reg[(op&0x0F00)>>8] != uint8(op&0x00FF) {
+		dis += fmt.Sprintf("SNE  V%x, %02x", x, kk)
+
+		if cpu.reg[x] != uint8(kk) {
 			cpu.pc += 2
 		}
-	} else if op&0xF00F == 0x5000 {
-		// 5xy0: SE Vx, Vy
-		// If values are the same, skip the next opcode
-		if cpu.reg[(op&0x0F00)>>8] == cpu.reg[(op&0x00F0)>>4] {
-			cpu.pc += 2
+	case 0x5:
+		if n == 0x0 {
+			// 5xy0: SE Vx, Vy
+			// If values are the same, skip the next opcode
+			dis += fmt.Sprintf("SE   V%x, V%x", x, y)
+
+			if cpu.reg[x] == cpu.reg[y] {
+				cpu.pc += 2
+			}
 		}
-	} else if op&0xF000 == 0x6000 {
+	case 0x6:
 		// 6xkk: LD Vx, byte
-		cpu.reg[(op&0x0F00)>>8] = uint8(op & 0x00FF)
-	} else if op&0xF000 == 0x7000 {
+		dis += fmt.Sprintf("LD   V%x, %02x", x, kk)
+
+		cpu.reg[x] = uint8(kk)
+	case 0x7:
 		// 7xkk: ADD Vx, byte
-		cpu.reg[(op&0x0F00)>>8] += uint8(op & 0x00FF)
-	} else if op&0xF000 == 0x8000 {
-		// 8xy0: LD Vx, Vy
-		cpu.reg[(op&0x0F00)>>8] = cpu.reg[(op&0x00F0)>>4]
-	} else if op&0xF00F == 0x8001 {
-		// 8xy1: OR Vx, Vy
-		cpu.reg[(op&0x0F00)>>8] |= cpu.reg[(op&0x00F0)>>4]
-	} else if op&0xF00F == 0x8002 {
-		// 8xy2: AND Vx, Vy
-		cpu.reg[(op&0x0F00)>>8] &= cpu.reg[(op&0x00F0)>>4]
-	} else if op&0xF00F == 0x8003 {
-		// 8xy3: XOR Vx, Vy
-		cpu.reg[(op&0x0F00)>>8] ^= cpu.reg[(op&0x00F0)>>4]
-	} else if op&0xF00F == 0x8004 {
-		// 8xy4: ADD Vx, Vy
-		cpu.reg[(op&0x0F00)>>8] += cpu.reg[(op&0x00F0)>>4]
+		dis += fmt.Sprintf("ADD  V%x, %02x", x, kk)
 
-		// set carry flag
-		if cpu.reg[(op&0x0F00)>>8] < cpu.reg[(op&0x00F0)>>4] {
-			cpu.reg[0xF] = 1
-		} else {
-			cpu.reg[0xF] = 0
-		}
-	} else if op&0xF00F == 0x8005 {
-		// 8xy5: SUB Vx, Vy
-		// set NOT borrow flag
-		if cpu.reg[(op&0x0F00)>>8] > cpu.reg[(op&0x00F0)>>4] {
-			cpu.reg[0xF] = 1
-		} else {
-			cpu.reg[0xF] = 0
-		}
+		cpu.reg[x] += uint8(kk)
+	case 0x8:
+		switch n {
+		case 0x0:
+			// 8xy0: LD Vx, Vy
+			dis += fmt.Sprintf("LD   V%x, V%x", x, y)
 
-		// subtract
-		cpu.reg[(op&0x0F00)>>8] -= cpu.reg[(op&0x00F0)>>4]
-	} else if op&0xF00F == 0x8006 {
-		// 8xy6: SHR Vx {, Vy}
-		// set carry flag
-		if cpu.reg[(op&0x0F00)>>8]&0x1 == 1 {
-			cpu.reg[0xF] = 1
-		} else {
-			cpu.reg[0xF] = 0
-		}
+			cpu.reg[x] = cpu.reg[y]
+		case 0x1:
+			// 8xy1: OR Vx, Vy
+			dis += fmt.Sprintf("OR   V%x, V%x", x, y)
 
-		// shift right
-		cpu.reg[(op&0x0F00)>>8] >>= 1
-	} else if op&0xF00F == 0x8007 {
-		// 8xy7: SUBN Vx, Vy
-		// set NOT borrow flag
-		if cpu.reg[(op&0x00F0)>>4] > cpu.reg[(op&0x0F00)>>8] {
-			cpu.reg[0xF] = 1
-		} else {
-			cpu.reg[0xF] = 0
-		}
+			cpu.reg[x] |= cpu.reg[y]
+		case 0x2:
+			// 8xy2: AND Vx, Vy
+			dis += fmt.Sprintf("AND  V%x, V%x", x, y)
 
-		// subtract
-		cpu.reg[(op&0x0F00)>>8] = cpu.reg[(op&0x00F0)>>4] - cpu.reg[(op&0x0F00)>>8]
-	} else if op&0xF00F == 0x800E {
-		// 8xyE: SHL Vx {, Vy}
-		// set carry flag
-		if cpu.reg[(op&0x0F00)>>8]&0x80 == 1 {
-			cpu.reg[0xF] = 1
-		} else {
-			cpu.reg[0xF] = 0
-		}
+			cpu.reg[x] &= cpu.reg[y]
+		case 0x3:
+			// 8xy3: XOR Vx, Vy
+			dis += fmt.Sprintf("XOR  V%x, V%x", x, y)
 
-		// shift left
-		cpu.reg[(op&0x0F00)>>8] <<= 1
-	} else if op&0xF00F == 0x9000 {
-		// 9xy0: SNE Vx, Vy
-		if cpu.reg[(op&0x0F00)>>8] != cpu.reg[(op&0x00F0)>>4] {
-			cpu.pc += 2
+			cpu.reg[x] ^= cpu.reg[y]
+		case 0x4:
+			// 8xy4: ADD Vx, Vy
+			dis += fmt.Sprintf("ADD  V%x, V%x", x, y)
+
+			cpu.reg[x] += cpu.reg[y]
+
+			// set carry flag
+			if cpu.reg[x] < cpu.reg[y] {
+				cpu.reg[0xF] = 1
+			} else {
+				cpu.reg[0xF] = 0
+			}
+		case 0x5:
+			// 8xy5: SUB Vx, Vy
+			dis += fmt.Sprintf("SUB  V%x, V%x", x, y)
+
+			// set NOT borrow flag
+			if cpu.reg[x] > cpu.reg[y] {
+				cpu.reg[0xF] = 1
+			} else {
+				cpu.reg[0xF] = 0
+			}
+
+			// subtract
+			cpu.reg[x] -= cpu.reg[y]
+		case 0x6:
+			// 8xy6: SHR Vx {, Vy}
+			dis += fmt.Sprintf("SHR  V%x {, V%x}", x, y)
+
+			// set carry flag
+			if cpu.reg[x]&0x1 == 1 {
+				cpu.reg[0xF] = 1
+			} else {
+				cpu.reg[0xF] = 0
+			}
+
+			// shift right
+			cpu.reg[x] >>= 1
+		case 0x7:
+			// 8xy7: SUBN Vx, Vy
+			dis += fmt.Sprintf("SUBN V%x, V%x", x, y)
+
+			// set NOT borrow flag
+			if cpu.reg[y] > cpu.reg[x] {
+				cpu.reg[0xF] = 1
+			} else {
+				cpu.reg[0xF] = 0
+			}
+
+			// subtract
+			cpu.reg[x] = cpu.reg[y] - cpu.reg[x]
+		case 0xE:
+			// 8xyE: SHL Vx {, Vy}
+			dis += fmt.Sprintf("SHL  V%x {, V%x}", x, y)
+
+			// set carry flag
+			if cpu.reg[x]&0x80 == 0x80 {
+				cpu.reg[0xF] = 1
+			} else {
+				cpu.reg[0xF] = 0
+			}
+
+			// shift left
+			cpu.reg[x] <<= 1
 		}
-	} else if op&0xF000 == 0xA000 {
+	case 0x9:
+		switch n {
+		case 0x0:
+			// 9xy0: SNE Vx, Vy
+			dis += fmt.Sprintf("SNE  V%x, V%x", x, y)
+
+			if cpu.reg[x] != cpu.reg[y] {
+				cpu.pc += 2
+			}
+		}
+	case 0xA:
 		// Annn: LD I, addr
-		cpu.i = op & 0x0FFF
-	} else if op&0xF000 == 0xB000 {
+		dis += fmt.Sprintf("LD   I, %04x", addr)
+
+		cpu.i = addr
+	case 0xB:
 		// Bnnn: JP V0, addr
-		cpu.pc = uint16(cpu.reg[0]) + uint16(op&0x0FFF)
-	} else if op&0xF000 == 0xC000 {
+		dis += fmt.Sprintf("JP   V0, %04x", addr)
+
+		cpu.pc = uint16(cpu.reg[0]) + uint16(addr)
+	case 0xC:
 		// Cxkk: RND Vx, byte
 		// The interpreter generates a random number from 0 to 255, which is then
 		// ANDed with the value kk. The results are stored in Vx.
+		dis += fmt.Sprintf("RND  V%x, %02x", x, kk)
+
 		rnd := uint16(rand.Intn(255))
-		cpu.reg[(op&0x0F00)>>8] = uint8(rnd & op & 0x00FF)
-	} else if op&0xF000 == 0xD000 {
+		cpu.reg[x] = uint8(rnd & kk)
+	case 0xD:
 		// Dxyn: DRW Vx, Vy, nibble
 		// Display n-byte sprite starting at memory location I at (Vx, Vy),
 		// set VF = collision.
-		x := (op & 0x0F00) >> 8
-		y := (op & 0x00F0) >> 4
-		n := op & 0x000F
-		if cpu.display.Blit(x, y, cpu.memory.ReadRange(cpu.i, n)) {
+		dis += fmt.Sprintf("DRW  V%x, V%x, %x", x, y, n)
+
+		if cpu.display.Blit(uint16(cpu.reg[x]), uint16(cpu.reg[y]), cpu.memory.ReadRange(cpu.i, n)) {
 			cpu.reg[0xF] = 1
 		} else {
 			cpu.reg[0xF] = 0
 		}
-	} else if op&0xF0FF == 0xE09E {
-		// Ex9E: SKP Vx
-		if cpu.keyboard.IsKeyPressed(cpu.reg[(op&0x0F00)>>8]) {
-			cpu.pc += 2
-		}
-	} else if op&0xF0FF == 0xE0A1 {
-		// ExA1: SKNP Vx
-		if !cpu.keyboard.IsKeyPressed(cpu.reg[(op&0x0F00)>>8]) {
-			cpu.pc += 2
-		}
-	} else if op&0xF0FF == 0xF007 {
-		// Fx07: LD Vx, DT
-		cpu.reg[(op&0x0F00)>>8] = cpu.delay.Get()
-	} else if op&0xF0FF == 0xF00A {
-		// Fx0A: LD Vx, K
-		code, ok := cpu.keyboard.GetKeyPress()
-		if ok {
-			cpu.reg[(op&0x0F00)>>8] = code
-		} else {
-			// no key was pressed, reset the program counter so we
-			// try again on the next tick.
-			cpu.pc -= 2
-		}
-	} else if op&0xF0FF == 0xF015 {
-		// Fx15: LD DT, Vx
-		cpu.delay.Set(cpu.reg[(op&0x0F00)>>8])
-	} else if op&0xF0FF == 0xF018 {
-		// Fx18: LD ST, Vx
-		cpu.sound.Set(cpu.reg[(op&0x0F00)>>8])
-	} else if op&0xF0FF == 0xF01E {
-		// Fx1E: ADD I, Vx
-		cpu.i += uint16(cpu.reg[(op&0x0F00)>>8])
-	} else if op&0xF0FF == 0xF029 {
-		// Fx29: LD F, Vx
-		// Set I = location of sprite for digit Vx.
-		// (digit sprites are 5 bytes)
-		cpu.i = uint16(cpu.reg[(op&0x0F00)>>8] * 5)
-	} else if op&0xF0FF == 0xF033 {
-		// Fx33: LD B, Vx
-		val := cpu.reg[(op&0x0F00)>>8]
-		cpu.memory.WriteByte(cpu.i, val/100)
-		cpu.memory.WriteByte(cpu.i+1, (val/10)%10)
-		cpu.memory.WriteByte(cpu.i+2, val%10)
-	} else if op&0xF0FF == 0xF055 {
-		// Fx55: LD [I], Vx
-		val := (op & 0x0F00) >> 8
+	case 0xE:
+		switch kk {
+		case 0x9E:
+			// Ex9E: SKP Vx
+			dis += fmt.Sprintf("SKP  V%x", x)
 
-		for i := uint16(0); i <= val; i++ {
-			cpu.memory.WriteByte(cpu.i+i, cpu.reg[i])
-		}
-	} else if op&0xF0FF == 0xF065 {
-		// Fx65: LD Vx, [I]
-		val := (op & 0x0F00) >> 8
+			if cpu.keyboard.IsKeyPressed(cpu.reg[x]) {
+				cpu.pc += 2
+			}
+		case 0xA1:
+			// ExA1: SKNP Vx
+			dis += fmt.Sprintf("SKNP V%x", x)
 
-		for i := uint16(0); i <= val; i++ {
-			cpu.reg[i] = cpu.memory.ReadByte(cpu.i + i)
+			if !cpu.keyboard.IsKeyPressed(cpu.reg[x]) {
+				cpu.pc += 2
+			}
+		}
+	case 0xF:
+		switch kk {
+		case 0x07:
+			// Fx07: LD Vx, DT
+			dis += fmt.Sprintf("LD   V%x, DT", x)
+
+			cpu.reg[x] = cpu.delay.Get()
+		case 0x0A:
+			// Fx0A: LD Vx, K
+			dis += fmt.Sprintf("LD   V%x, K", x)
+
+			code, ok := cpu.keyboard.GetKeyPress()
+			if ok {
+				cpu.reg[x] = code
+			} else {
+				// no key was pressed, reset the program counter so we
+				// try again on the next tick.
+				cpu.pc -= 2
+			}
+		case 0x15:
+			// Fx15: LD DT, Vx
+			dis += fmt.Sprintf("LD   DT, V%x", x)
+
+			cpu.delay.Set(cpu.reg[x])
+		case 0x18:
+			// Fx18: LD ST, Vx
+			dis += fmt.Sprintf("LD   ST, V%x", x)
+
+			cpu.sound.Set(cpu.reg[x])
+		case 0x1E:
+			// Fx1E: ADD I, Vx
+			dis += fmt.Sprintf("ADD  I, V%x", x)
+
+			cpu.i += uint16(cpu.reg[x])
+		case 0x29:
+			// Fx29: LD F, Vx
+			// Set I = location of sprite for digit Vx.
+			// (digit sprites are 5 bytes, starting at address 0)
+			dis += fmt.Sprintf("LD   F, V%x", x)
+
+			cpu.i = uint16(cpu.reg[x] * 5)
+		case 0x33:
+			// Fx33: LD B, Vx
+			// Write Vx as BCD to memory starting at I
+			dis += fmt.Sprintf("LD   B, V%x", x)
+
+			vx := cpu.reg[x]
+			cpu.memory.WriteByte(cpu.i, vx/100)
+			cpu.memory.WriteByte(cpu.i+1, (vx/10)%10)
+			cpu.memory.WriteByte(cpu.i+2, vx%10)
+		case 0x55:
+			// Fx55: LD [I], Vx
+			// Write register V0..Vx into memory starting at I
+			dis += fmt.Sprintf("LD   [I], V%x", x)
+
+			for i := uint16(0); i <= uint16(x); i++ {
+				cpu.memory.WriteByte(cpu.i+i, cpu.reg[i])
+			}
+		case 0x65:
+			// Fx65: LD Vx, [I]
+			// Read memory starting at I into register v0..Vx
+			dis += fmt.Sprintf("LD   V%x, [I]", x)
+
+			for i := uint16(0); i <= uint16(x); i++ {
+				cpu.reg[i] = cpu.memory.ReadByte(cpu.i + i)
+			}
 		}
 	}
+
+	/*
+		dis += fmt.Sprintf("\n\t\ti: %04x, v:[", cpu.i)
+		for i := 0; i < len(cpu.reg); i++ {
+			if i > 0 {
+				dis += ", "
+			}
+			dis += fmt.Sprintf("%x: %02x", i, cpu.reg[i])
+		}
+		dis += "]"
+	*/
+
+	cpu.logger.Infof(dis)
 }

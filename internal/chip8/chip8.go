@@ -3,6 +3,7 @@ package chip8
 import (
 	"time"
 
+	"github.com/charmbracelet/log"
 	"github.com/corani/chip-8/internal/cpu"
 	"github.com/corani/chip-8/internal/display"
 	"github.com/corani/chip-8/internal/keyboard"
@@ -11,23 +12,28 @@ import (
 	"github.com/corani/chip-8/internal/timer"
 )
 
-func New() *Chip8 {
+func New(logger *log.Logger, romfile string, romdata []uint8) *Chip8 {
 	soundTimer := timer.New()
 
 	chip8 := &Chip8{
+		logger:   logger,
 		memory:   memory.New(),
-		display:  display.New(),
+		display:  display.New(logger),
 		keyboard: keyboard.New(),
 		sound:    sound.New(soundTimer),
 		delay:    timer.New(),
 	}
 
-	chip8.cpu = cpu.New(chip8.memory, chip8.display, chip8.keyboard, chip8.delay, soundTimer)
+	chip8.memory.Load(0x000, digitSprites())
+	chip8.memory.Load(0x200, romdata)
+
+	chip8.cpu = cpu.New(logger, chip8.memory, chip8.display, chip8.keyboard, chip8.delay, soundTimer)
 
 	return chip8
 }
 
 type Chip8 struct {
+	logger   *log.Logger
 	memory   *memory.Memory
 	display  *display.Display
 	keyboard *keyboard.Keyboard
@@ -50,6 +56,27 @@ func (c *Chip8) KeyPress(code uint8) {
 	c.keyboard.KeyPress(code)
 }
 
-func (c *Chip8) Framebuffer() [64][32]byte {
+func (c *Chip8) Framebuffer() [][]byte {
 	return c.display.Framebuffer
+}
+
+func digitSprites() []uint8 {
+	return []uint8{
+		0xF0, 0x90, 0x90, 0x90, 0xF0, // 0
+		0x20, 0x60, 0x20, 0x20, 0x70, // 1
+		0xF0, 0x10, 0xF0, 0x80, 0xF0, // 2
+		0xF0, 0x10, 0xF0, 0x10, 0xF0, // 3
+		0x90, 0x90, 0xF0, 0x10, 0x10, // 4
+		0xF0, 0x80, 0xF0, 0x10, 0xF0, // 5
+		0xF0, 0x80, 0xF0, 0x90, 0xF0, // 6
+		0xF0, 0x10, 0x20, 0x40, 0x40, // 7
+		0xF0, 0x90, 0xF0, 0x90, 0xF0, // 8
+		0xF0, 0x90, 0xF0, 0x10, 0xF0, // 9
+		0xF0, 0x90, 0xF0, 0x90, 0x90, // A
+		0xE0, 0x90, 0xE0, 0x90, 0xE0, // B
+		0xF0, 0x80, 0x80, 0x80, 0xF0, // C
+		0xE0, 0x90, 0x90, 0x90, 0xE0, // D
+		0xF0, 0x80, 0xF0, 0x80, 0xF0, // E
+		0xF0, 0x80, 0xF0, 0x80, 0x80, // F
+	}
 }

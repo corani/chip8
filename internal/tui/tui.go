@@ -2,6 +2,7 @@ package tui
 
 import (
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/log"
@@ -29,9 +30,11 @@ type App struct {
 	chip8   *chip8.Chip8
 	keyMap  map[string]uint8
 	program *tea.Program
+	dt      time.Time
 }
 
 func (app *App) Run() error {
+	app.dt = time.Now()
 	_, err := app.program.Run()
 
 	return err
@@ -52,6 +55,13 @@ func (app *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			app.chip8.KeyPress(code)
 		}
 	}
+
+	now := time.Now()
+	dt := now.Sub(app.dt)
+	app.dt = now
+
+	app.chip8.Tick(dt)
+
 	return app, func() tea.Msg {
 		return true
 	}
@@ -62,8 +72,8 @@ func (app *App) View() string {
 
 	fb := app.chip8.Framebuffer()
 
-	for y := 0; y < 32; y++ {
-		for x := 0; x < 64; x++ {
+	for y := 0; y < len(fb[0]); y++ {
+		for x := 0; x < len(fb); x++ {
 			if fb[x][y] == 0 {
 				view.WriteString(" ")
 			} else {

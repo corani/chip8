@@ -7,7 +7,7 @@ func New() *Keyboard {
 	// TODO(daniel): mutex for pressed.
 	return &Keyboard{
 		pressed: nil,
-		hold:    60 * time.Millisecond,
+		hold:    30 * time.Millisecond,
 		dt:      0,
 	}
 }

@@ -1,27 +1,34 @@
 package display
 
-func New() *Display {
-	var fb [64][32]byte
+import "github.com/charmbracelet/log"
 
-	// checkerboard pattern
-	for y := 0; y < 32; y++ {
-		for x := 0; x < 64; x++ {
-			fb[x][y] = uint8((x + y) % 2)
-		}
+func New(logger *log.Logger) *Display {
+	width := 64
+	height := 32
+
+	fb := make([][]uint8, width)
+	for x := 0; x < width; x++ {
+		fb[x] = make([]uint8, height)
 	}
 
 	return &Display{
+		logger:      logger,
+		width:       64,
+		height:      32,
 		Framebuffer: fb,
 	}
 }
 
 type Display struct {
-	Framebuffer [64][32]byte
+	logger      *log.Logger
+	width       int
+	height      int
+	Framebuffer [][]uint8
 }
 
 func (d *Display) Clear() {
-	for y := 0; y < 32; y++ {
-		for x := 0; x < 64; x++ {
+	for y := 0; y < d.height; y++ {
+		for x := 0; x < d.width; x++ {
 			d.Framebuffer[x][y] = 0
 		}
 	}
@@ -32,14 +39,24 @@ func (d *Display) Blit(sx, sy uint16, sprite []uint8) bool {
 	const width = uint16(8)
 	height := uint16(len(sprite))
 
+	res := false
+
 	for y := uint16(0); y < height; y++ {
 		for x := uint16(0); x < width; x++ {
 			// get the correct bit
-			val := (sprite[y*height] >> (width - x - 1)) & 0x01
+			val := (sprite[y] >> (width - x - 1)) & 0x01
+
 			// sprites need to wrap!
-			d.Framebuffer[(sx+x)%width][(sy+y)%height] = val
+			px := (sx + x) % uint16(d.width)
+			py := (sy + y) % uint16(d.height)
+
+			if val != d.Framebuffer[px][py] {
+				res = true
+			}
+
+			d.Framebuffer[px][py] ^= val
 		}
 	}
 
-	return false
+	return res
 }

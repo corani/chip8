@@ -1,6 +1,7 @@
 package main
 
 import (
+	"io"
 	"os"
 
 	"github.com/charmbracelet/log"
@@ -9,14 +10,13 @@ import (
 )
 
 func main() {
-	out, err := os.Open("log.txt")
+	out, err := os.Create("log.txt")
 	if err != nil {
 		panic(err)
 	}
 	defer out.Close()
 
-	logger := log.New(out)
-
+	logger := log.New(io.MultiWriter(out, os.Stderr))
 	if len(os.Args) != 2 {
 		logger.Errorf("Usage: %s <rom-file>", os.Args[0])
 		os.Exit(1)
@@ -27,6 +27,10 @@ func main() {
 		logger.Errorf("failed to load rom: %v", err)
 		os.Exit(1)
 	}
+
+	// NOTE(daniel): from this point on, don't log to stderr anymore,
+	// as this messes up the TUI interface.
+	logger.SetOutput(out)
 
 	chip8 := chip8.New(logger, os.Args[1], bs)
 

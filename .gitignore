@@ -1,4 +1,5 @@
 chip8-roms/
 chip8-test-rom/
 log.txt
+cpu.prof
 bin/

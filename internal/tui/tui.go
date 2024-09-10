@@ -20,7 +20,8 @@ func New(log *log.Logger, chip8 *chip8.Chip8) *App {
 		"z": 0xA, "x": 0x0, "c": 0xB, "v": 0xF,
 	}
 
-	app.program = tea.NewProgram(app, tea.WithAltScreen())
+	app.program = tea.NewProgram(app, tea.WithAltScreen(), tea.WithFPS(60))
+	app.view.Grow(64*32 + 32)
 
 	return app
 }
@@ -31,6 +32,7 @@ type App struct {
 	keyMap  map[string]uint8
 	program *tea.Program
 	dt      time.Time
+	view    strings.Builder
 }
 
 func (app *App) Run() error {
@@ -63,25 +65,27 @@ func (app *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	app.chip8.Tick(dt)
 
 	return app, func() tea.Msg {
+		time.Sleep(16 * time.Millisecond)
+
 		return true
 	}
 }
 
 func (app *App) View() string {
-	var view strings.Builder
-
 	fb := app.chip8.Framebuffer()
+
+	app.view.Reset()
 
 	for y := 0; y < len(fb[0]); y++ {
 		for x := 0; x < len(fb); x++ {
 			if fb[x][y] == 0 {
-				view.WriteString(" ")
+				app.view.WriteRune(' ')
 			} else {
-				view.WriteString("█")
+				app.view.WriteRune('█')
 			}
 		}
-		view.WriteString("\n")
+		app.view.WriteRune('\n')
 	}
 
-	return view.String()
+	return app.view.String()
 }

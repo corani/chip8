@@ -56,7 +56,7 @@ func (c *Chip8) KeyPress(code uint8) {
 	c.keyboard.KeyPress(code)
 }
 
-func (c *Chip8) Framebuffer() [][]byte {
+func (c *Chip8) Framebuffer() [][]uint8 {
 	return c.display.Framebuffer
 }
 

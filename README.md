@@ -4,7 +4,12 @@
 
 ```bash
 $ ./build.sh
-$ ./bin/chip8 <path-to-rom>
+
+$ ./bin/chip8                   \
+    [-ui gui/tui]               \
+    [-log log-file]             \
+    [-cpuprofile pprof-file]    \
+    -rom <path-to-rom>
 ```
 
 ## Roms

@@ -8,6 +8,7 @@ import (
 
 	"github.com/charmbracelet/log"
 	"github.com/corani/chip-8/internal/chip8"
+	"github.com/corani/chip-8/internal/gui"
 	"github.com/corani/chip-8/internal/tui"
 )
 
@@ -15,7 +16,12 @@ var (
 	cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
 	romfile    = flag.String("rom", "", "path to the rom file")
 	logfile    = flag.String("log", "", "path to the log file")
+	ui         = flag.String("ui", "tui", "user interface to use (tui, gui)")
 )
+
+type App interface {
+	Run() error
+}
 
 func main() {
 	flag.Parse()
@@ -60,13 +66,23 @@ func main() {
 		defer pprof.StopCPUProfile()
 	}
 
+	chip8 := chip8.New(logger, os.Args[1], bs)
+
 	// NOTE(daniel): from this point on, don't log to stderr anymore,
 	// as this messes up the TUI interface.
 	logger.SetOutput(out)
 
-	chip8 := chip8.New(logger, os.Args[1], bs)
+	var app App
 
-	app := tui.New(logger, chip8)
+	switch *ui {
+	case "tui":
+		app = tui.New(logger, chip8)
+	case "gui":
+		app = gui.New(logger, chip8)
+	default:
+		logger.Errorf("unknown user interface: %s (supported: tui, gui)", *ui)
+		os.Exit(1)
+	}
 
 	if err := app.Run(); err != nil {
 		logger.Errorf("run failed: %v", err)

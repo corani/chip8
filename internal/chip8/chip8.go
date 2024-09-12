@@ -48,12 +48,15 @@ func (c *Chip8) LoadROM(rom []uint8) {
 func (c *Chip8) Tick(dt time.Duration) {
 	c.delay.Tick(dt)
 	c.sound.Tick(dt)
-	c.keyboard.Tick(dt)
 	c.cpu.Tick(dt)
 }
 
-func (c *Chip8) KeyPress(code uint8) {
-	c.keyboard.KeyPress(code)
+func (c *Chip8) KeyDown(code uint8) {
+	c.keyboard.KeyDown(code)
+}
+
+func (c *Chip8) KeyUp(code uint8) {
+	c.keyboard.KeyUp(code)
 }
 
 func (c *Chip8) Framebuffer() [][]uint8 {

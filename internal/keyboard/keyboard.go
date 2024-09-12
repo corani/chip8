@@ -1,54 +1,51 @@
 package keyboard
 
-import "time"
-
 func New() *Keyboard {
-	// TODO(daniel): `hold` needs to be tuned.
-	// TODO(daniel): mutex for pressed.
 	return &Keyboard{
 		pressed: nil,
-		hold:    30 * time.Millisecond,
-		dt:      0,
 	}
 }
 
 type Keyboard struct {
-	pressed *uint8
-	hold    time.Duration
-	dt      time.Duration
+	pressed []uint8
 }
 
-func (k *Keyboard) KeyPress(code uint8) {
-	k.pressed = &code
-}
-
-func (k *Keyboard) Tick(dt time.Duration) {
-	if k.pressed == nil {
-		return
+func (k *Keyboard) KeyDown(code uint8) {
+	// check if key is already pressed
+	for _, key := range k.pressed {
+		if key == code {
+			return
+		}
 	}
 
-	// accumulate delta time
-	k.dt += dt
+	k.pressed = append(k.pressed, code)
+}
 
-	// if key is held down for `hold` duration, reset the keypress
-	if k.dt >= k.hold {
-		k.pressed = nil
-		k.dt = 0
+func (k *Keyboard) KeyUp(code uint8) {
+	// remove key from pressed if found
+	for i, key := range k.pressed {
+		if key == code {
+			k.pressed = append(k.pressed[:i], k.pressed[i+1:]...)
+			return
+		}
 	}
 }
 
 func (k *Keyboard) IsKeyPressed(code uint8) bool {
-	if k.pressed == nil {
-		return false
+	for _, key := range k.pressed {
+		if key == code {
+			return true
+		}
 	}
 
-	return *k.pressed == code
+	return false
 }
 
 func (k *Keyboard) GetKeyPress() (uint8, bool) {
-	if k.pressed == nil {
-		return 0, false
+	// return the first key pressed
+	if len(k.pressed) > 0 {
+		return k.pressed[0], true
 	}
 
-	return *k.pressed, true
+	return 0, false
 }

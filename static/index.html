@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <link rel="stylesheet" href="chip8.css" />
+    <script src="wasm_exec.js"></script>
+    <script language="javascript">
+        document.addEventListener('DOMContentLoaded', function() {
+            const go = new Go();
+
+            WebAssembly.instantiateStreaming(fetch('chip8.wasm'), go.importObject).then((result) => {
+                go.run(result.instance);
+            });
+
+            const romSelect = document.getElementById('romSelect');
+            const runButton = document.getElementById("runButton");
+
+            fetch('/api/roms')
+                .then(response => response.json())
+                .then(data => {
+                    data.forEach(rom => {
+                        const option = document.createElement('option');
+                        option.value = rom;
+                        option.text = rom;
+                        romSelect.appendChild(option);
+                    });
+                });
+
+            runButton.addEventListener("click", () => {
+                const rom = romSelect.value;
+
+                fetch(`/api/rom/${rom}`)
+                    .then(response => response.arrayBuffer())
+                    .then(data => {
+                        runGame(rom, new Uint8Array(data));
+                    });
+            });
+        });
+    </script>
+</head>
+<body>
+    <div id="gridContainer">
+        <canvas id="gameCanvas" width="500" height="250"></canvas>
+        <div id="buttonRow">
+            <select id="romSelect"></select>
+            <button id="runButton">Run</button>
+        </div>
+    </div>
+</body>
+</html>

@@ -362,5 +362,7 @@ func (cpu *CPU) tick() {
 		dis += "]"
 	*/
 
-	cpu.logger.Infof(dis)
+	if cpu.logger != nil {
+		cpu.logger.Infof(dis)
+	}
 }

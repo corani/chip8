@@ -3,3 +3,5 @@ chip8-test-rom/
 log.txt
 cpu.prof
 bin/
+static/chip8.wasm
+static/wasm_exec.js

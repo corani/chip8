@@ -71,10 +71,16 @@ func main() {
 		os.Exit(1)
 	}
 
-	bs, err := os.ReadFile(*romfile)
-	if err != nil {
-		logger.Errorf("failed to load rom: %v", err)
-		os.Exit(1)
+	var rom []byte
+
+	if *romfile != "" {
+		bs, err := os.ReadFile(*romfile)
+		if err != nil {
+			logger.Errorf("failed to load rom: %v", err)
+			os.Exit(1)
+		}
+
+		rom = bs
 	}
 
 	if *cpuprofile != "" {
@@ -91,7 +97,7 @@ func main() {
 		defer pprof.StopCPUProfile()
 	}
 
-	chip8 := chip8.New(logger, os.Args[1], bs)
+	chip8 := chip8.New(logger, os.Args[1], rom)
 
 	var app App
 
@@ -106,9 +112,11 @@ func main() {
 
 	}
 
-	// NOTE(daniel): from this point on, don't log to stderr anymore,
-	// as this messes up the TUI interface.
-	logger.SetOutput(out)
+	if *ui == "tui" {
+		// NOTE(daniel): from this point on, don't log to stderr anymore,
+		// as this messes up the TUI interface.
+		logger.SetOutput(out)
+	}
 
 	if err := app.Run(); err != nil {
 		logger.Errorf("run failed: %v", err)

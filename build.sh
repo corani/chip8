@@ -3,6 +3,7 @@ set -x
 mkdir -p bin
 
 go build -o bin/chip8 ./cmd/chip8/
+go build -o bin/dis ./cmd/dis/
 GOOS=js GOARCH=wasm go build -o static/chip8.wasm ./cmd/wasm/
 
 # strip minor version
